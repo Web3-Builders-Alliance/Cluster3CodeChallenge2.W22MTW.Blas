@@ -11,7 +11,7 @@ use cw721::Cw721ReceiveMsg;
 
 use crate::error::ContractError;
 use crate::msg::{Cw20DepositResponse, ExecuteMsg, InstantiateMsg, QueryMsg, Cw20HookMsg, DepositResponse, Cw721HookMsg, Cw721DepositResponse};
-use crate::state::{Cw20Deposits, CW20_DEPOSITS, DEPOSITS, Deposits, CW721_DEPOSITS};
+use crate::state::{Cw20Deposits, CW20_DEPOSITS, DEPOSITS, Deposits, CW721_DEPOSITS, Cw721Deposits };
 
 const CONTRACT_NAME: &str = "deposit-cw20-example";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -212,7 +212,22 @@ pub fn execute_cw20_withdraw(
 
 pub fn execute_cw721_deposit(deps: DepsMut, info: MessageInfo, owner:String, token_id:String) -> Result<Response, ContractError> {
     let cw721_contract_address = info.sender.clone().into_string();
-    unimplemented!()
+    //contract, owner, token_id
+    let deposit = Cw721Deposits {
+        owner: owner.clone(),
+        contract: cw721_contract_address.clone(),
+        token_id: token_id.clone()
+    };
+ 
+    CW721_DEPOSITS
+    .save(deps.storage, (&cw721_contract_address, &owner, &token_id), &deposit)
+    .unwrap();
+
+    Ok(Response::new()
+        .add_attribute("execute", "cw721_deposit")
+        .add_attribute("owner", owner)
+        .add_attribute("contract", cw721_contract_address.to_string())
+        .add_attribute("token_id", token_id.to_string()))
 }
 
 pub fn execute_cw721_withdraw(
@@ -221,7 +236,43 @@ pub fn execute_cw721_withdraw(
     contract:String,
     token_id: String,
 ) -> Result<Response, ContractError> {
-    unimplemented!()
+
+    let owner = info.sender.clone().into_string();
+
+    // pub enum ExecuteMsg<T, E> {
+    //     /// Transfer is a base message to move a token to another account without triggering actions
+    //     TransferNft { recipient: String, token_id: String },
+    //     /// Send is a base message to transfer a token to a contract and trigger an action
+    //     /// on the receiving contract.
+    //     SendNft {
+    //         contract: String,
+    //         token_id: String,
+    //         msg: Binary,
+  
+    if CW721_DEPOSITS.has(deps.storage, (&contract, &owner, &token_id)) {
+        let exe_msg = cw721_base::ExecuteMsg::TransferNft { recipient: owner, token_id: token_id };
+        let msg = WasmMsg::Execute { contract_addr: contract, msg: to_binary(&exe_msg)?, funds:vec![] };
+    }
+    match CW721_DEPOSITS.load(deps.storage, (&contract, &owner, &token_id)) {
+        Ok(mut deposit) => {
+
+            deposit.count = deposit.count.checked_sub(1).unwrap();
+            CW20_DEPOSITS
+                .save(deps.storage, (&sender, &contract), &deposit)
+                .unwrap();
+
+            let exe_msg = cw20_base::msg::ExecuteMsg::Transfer { recipient: sender, amount: Uint128::from(amount) };
+            let msg = WasmMsg::Execute { contract_addr: contract, msg: to_binary(&exe_msg)?, funds:vec![] };
+
+            Ok(Response::new()
+            .add_attribute("execute", "withdraw")
+            .add_message(msg))
+        }
+        Err(_) => {
+            return Err(ContractError::NoCw20ToWithdraw {  });
+        }
+    }    
+
 }
 
 pub fn query_deposits(deps: Deps, address:String) -> StdResult<DepositResponse> {
