@@ -122,6 +122,7 @@ pub fn execute_withdraw(
 
     let sender = info.sender.clone().into_string();
 
+    // Are we not checking if the user has got funds for this denom? Trigger ContractError ? 
     let mut deposit = DEPOSITS.load(deps.storage, (&sender, denom.as_str())).unwrap();
     deposit.coins.amount = deposit.coins.amount.checked_sub(Uint128::from(amount)).unwrap();
     deposit.count = deposit.count.checked_sub(1).unwrap();
@@ -140,6 +141,7 @@ pub fn execute_withdraw(
     )
 }
 
+// The deposit is done by a user through a contract. The sender is the contract.
 pub fn execute_cw20_deposit(deps: DepsMut, env:Env, info: MessageInfo, owner:String, amount:Uint128) -> Result<Response, ContractError> {
     let cw20_contract_address = info.sender.clone().into_string();
     let expiration = Expiration::AtHeight(env.block.height + 20);
@@ -174,6 +176,7 @@ pub fn execute_cw20_deposit(deps: DepsMut, env:Env, info: MessageInfo, owner:Str
         .add_attribute("amount", amount.to_string()))
 }
 
+// The withdrawal is done by a user, specifying the contract that will get the CW20 tokens.
 //use WasmMsg::Execute instead of BankMsg::Send
 pub fn execute_cw20_withdraw(
     deps: DepsMut,
@@ -184,7 +187,6 @@ pub fn execute_cw20_withdraw(
 ) -> Result<Response, ContractError> {
     let sender = info.sender.clone().into_string();
     match CW20_DEPOSITS.load(deps.storage, (&sender, &contract)) {
-
         Ok(mut deposit) => {
             if deposit.stake_time.is_expired(&env.block) == false {
                 return Err(ContractError::StakeDurationNotPassed {  });
@@ -209,7 +211,7 @@ pub fn execute_cw20_withdraw(
     }
 }
 
-
+// The deposit is done by a user through a contract. The sender is the contract.
 pub fn execute_cw721_deposit(deps: DepsMut, info: MessageInfo, owner:String, token_id:String) -> Result<Response, ContractError> {
     let cw721_contract_address = info.sender.clone().into_string();
     //contract, owner, token_id
@@ -239,37 +241,19 @@ pub fn execute_cw721_withdraw(
 
     let owner = info.sender.clone().into_string();
 
-    // pub enum ExecuteMsg<T, E> {
-    //     /// Transfer is a base message to move a token to another account without triggering actions
-    //     TransferNft { recipient: String, token_id: String },
-    //     /// Send is a base message to transfer a token to a contract and trigger an action
-    //     /// on the receiving contract.
-    //     SendNft {
-    //         contract: String,
-    //         token_id: String,
-    //         msg: Binary,
-  
-    if CW721_DEPOSITS.has(deps.storage, (&contract, &owner, &token_id)) {
-        let exe_msg = cw721_base::ExecuteMsg::TransferNft { recipient: owner, token_id: token_id };
-        let msg = WasmMsg::Execute { contract_addr: contract, msg: to_binary(&exe_msg)?, funds:vec![] };
-    }
     match CW721_DEPOSITS.load(deps.storage, (&contract, &owner, &token_id)) {
         Ok(mut deposit) => {
-
-            deposit.count = deposit.count.checked_sub(1).unwrap();
-            CW20_DEPOSITS
-                .save(deps.storage, (&sender, &contract), &deposit)
-                .unwrap();
-
-            let exe_msg = cw20_base::msg::ExecuteMsg::Transfer { recipient: sender, amount: Uint128::from(amount) };
+            let exe_msg = cw721_base::ExecuteMsg::TransferNft { recipient: owner, token_id: token_id };
             let msg = WasmMsg::Execute { contract_addr: contract, msg: to_binary(&exe_msg)?, funds:vec![] };
-
+        
+            CW721_DEPOSITS.remove(deps.storage, (&contract, &owner, &token_id));
+        
             Ok(Response::new()
             .add_attribute("execute", "withdraw")
             .add_message(msg))
         }
         Err(_) => {
-            return Err(ContractError::NoCw20ToWithdraw {  });
+            return Err(ContractError::NoCw721ToWithdraw {  } );
         }
     }    
 
