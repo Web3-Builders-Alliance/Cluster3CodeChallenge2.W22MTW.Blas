@@ -267,6 +267,7 @@ mod tests {
         println!("\nDEPOSIT CONTRACT: get deposits of NFT CONTRACT: {:?}", get_cw721_deposits(&app, &deposit_contract, &nft_contract));
         println!("\nOwner of token {}: {:?}",token_id,get_owner_of(&app, &nft_contract, token_id.clone()));
 
+        //DEPOSIT
         println!("\nExecuteMsg::SendNft from NFT CONTRACT to DEPOSIT CONTRACT: - contract0 is deposit, contract1 is nft");
         let hook_msg = Cw721HookMsg::Deposit {};
         let msg = nft::contract::ExecuteMsg::SendNft {
